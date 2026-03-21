@@ -19,22 +19,36 @@ from lib.broom_racing import (
     PHI_MAX,
     V,
     curve_length,
+    heading_angular_error_rad,
 )
 from solutions.broom_racing import gate_pass, catch_snitch, catch_ball_and_gate
 
 OPEN_CASES = json.load(open(_hw / "tests" / "broom_racing_open_test_cases.json", "r"))
 
+GATE_PASS_REF = CATCH_SNITCH_REF = CATCH_BALL_AND_GATE_REF = None
+REF_AVAILABLE = False
 try:
     _ref_mod = importlib.import_module("reference_solution.broom_racing")
     GATE_PASS_REF = getattr(_ref_mod, "gate_pass_ref", None)
     CATCH_SNITCH_REF = getattr(_ref_mod, "catch_snitch_ref", None)
     CATCH_BALL_AND_GATE_REF = getattr(_ref_mod, "catch_ball_and_gate_ref", None)
-    REF_AVAILABLE = GATE_PASS_REF is not None and CATCH_SNITCH_REF is not None and CATCH_BALL_AND_GATE_REF is not None
-    HIDDEN_CASES = getattr(importlib.import_module("hidden_tests.test_broom_racing"), "HIDDEN_CASES", None)
+    REF_AVAILABLE = (
+        GATE_PASS_REF is not None
+        and CATCH_SNITCH_REF is not None
+        and CATCH_BALL_AND_GATE_REF is not None
+    )
 except Exception:
-    GATE_PASS_REF = CATCH_SNITCH_REF = CATCH_BALL_AND_GATE_REF = None
-    REF_AVAILABLE = False
-    HIDDEN_CASES = None
+    pass
+
+HIDDEN_CASES = None
+try:
+    HIDDEN_CASES = getattr(
+        importlib.import_module("hidden_tests.test_broom_racing"),
+        "HIDDEN_CASES",
+        None,
+    )
+except Exception:
+    pass
 
 RTOL = 1e-3
 LENGTH_MARGIN = 1e-3
@@ -139,18 +153,16 @@ def check_endpoints(
     d_start = np.linalg.norm(np.array([c0.x - start.x, c0.y - start.y, c0.z - start.z]))
     if d_start > pos_tol:
         errors.append(f"Start position error: {d_start:.4f}")
-    for attr in ("theta", "phi"):
-        diff = abs(getattr(c0, attr) - getattr(start, attr))
-        if diff > angle_tol:
-            errors.append(f"Start {attr} error: {diff:.4f}")
+    d_ang0 = heading_angular_error_rad(c0.theta, c0.phi, start.theta, start.phi)
+    if d_ang0 > angle_tol:
+        errors.append(f"Start heading error: angle={d_ang0:.4f} rad > {angle_tol}")
     if goal is not None:
         d_goal = np.linalg.norm(np.array([c1.x - goal.x, c1.y - goal.y, c1.z - goal.z]))
         if d_goal > pos_tol:
             errors.append(f"Goal position error: {d_goal:.4f}")
-        for attr in ("theta", "phi"):
-            diff = abs(getattr(c1, attr) - getattr(goal, attr))
-            if diff > angle_tol:
-                errors.append(f"Goal {attr} error: {diff:.4f}")
+        d_ang1 = heading_angular_error_rad(c1.theta, c1.phi, goal.theta, goal.phi)
+        if d_ang1 > angle_tol:
+            errors.append(f"Goal heading error: angle={d_ang1:.4f} rad > {angle_tol}")
     elif goal_xyz is not None:
         d_goal = np.linalg.norm(np.array([c1.x - goal_xyz.x, c1.y - goal_xyz.y, c1.z - goal_xyz.z]))
         if d_goal > pos_tol:
