@@ -97,4 +97,40 @@ def numerical_ik_so101_downturned(
         Mapping from each key in SO101_JOINT_NAMES to a float (joint angle in radians).
         Should be None if no solution within joint limits is found.
     """
-    raise NotImplementedError
+    import torch
+
+    # Build IK chain
+    chain = pk.build_chain_from_urdf(open(URDF_PATH, mode="rb").read())
+    serial_chain = pk.SerialChain(chain, "gripper_frame_link", "base_link")
+
+    # Target rotation for downturned pose: Rz(yaw) @ Rx(π)
+    # → EE z-axis points in world -Z, yaw rotates around world Z
+    cy, sy = np.cos(yaw), np.sin(yaw)
+    rot = np.array(
+        [[cy, sy, 0.0], [sy, -cy, 0.0], [0.0, 0.0, -1.0]], dtype=np.float32
+    )
+    goal = pk.Transform3d(
+        pos=torch.tensor([[x, y, z]], dtype=torch.float32),
+        rot=torch.tensor(rot, dtype=torch.float32).unsqueeze(0),
+    )
+
+    # Solve IK
+    low, high = serial_chain.get_joint_limits()
+    joint_limits = torch.stack([torch.tensor(low), torch.tensor(high)], dim=1)
+    ik = pk.PseudoInverseIK(
+        serial_chain, max_iterations=200, num_retries=50, joint_limits=joint_limits
+    )
+    sol = ik.solve(goal)
+
+    if not sol.converged_any[0]:
+        return None
+
+    # Pick first converged retry
+    idx = sol.converged[0].nonzero(as_tuple=True)[0][0]
+    q_np = sol.solutions[0, idx].detach().numpy()
+
+    # Check joint limits
+    if np.any(q_np < np.asarray(low)) or np.any(q_np > np.asarray(high)):
+        return None
+
+    return dict(zip(SO101_JOINT_NAMES, q_np))
